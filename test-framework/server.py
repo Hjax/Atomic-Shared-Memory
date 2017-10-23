@@ -21,7 +21,7 @@ def rm():
     
 if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('localhost', 10000)
+    server_address = ('localhost', 255)
     print('starting up on %s port %s' % server_address)
     sock.bind(server_address)
     sock.listen(1)
