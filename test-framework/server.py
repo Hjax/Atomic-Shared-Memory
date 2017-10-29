@@ -4,6 +4,9 @@ import os, socket, subprocess
 
 # message format: "command string" eg "build directory"
 
+hosts = ["192.168.1.151", "192.168.1.152"]
+main = False
+
 def build(directory):
     os.system("killall java")
     os.system("rm -rf bin")
@@ -26,7 +29,7 @@ def run(target):
     
 if __name__ == "__main__":
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_address = ('localhost', 2556)
+    server_address = ('localhost', 2555)
     print('starting up on %s port %s' % server_address)
     sock.bind(server_address)
     sock.listen(1)
@@ -36,6 +39,20 @@ if __name__ == "__main__":
             data = connection.recv(1024).decode()
             print("Recieved command: %s" % (data))
             data = data.split(" ")
+            if main:
+                for host in hosts:
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        server_address = (host, 2555)
+                        sock.connect(server_address)
+                        sock.sendall(data.encode())
+                        data = sock.recv(1024)
+                    except:
+                        pass
+    
+    # Send data
+    message = input(">>>")
+    sock.sendall(message.encode())
             try:
                 if data[0] == "build":
                     build(data[1])
