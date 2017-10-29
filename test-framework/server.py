@@ -50,9 +50,9 @@ if __name__ == "__main__":
                     except:
                         pass
     
-    # Send data
-    message = input(">>>")
-    sock.sendall(message.encode())
+            # Send data
+            message = input(">>>")
+            sock.sendall(message.encode())
             try:
                 if data[0] == "build":
                     build(data[1])
