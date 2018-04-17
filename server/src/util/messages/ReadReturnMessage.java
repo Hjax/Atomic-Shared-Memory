@@ -1,23 +1,24 @@
 package util.messages;
 
+import dataserver.DataServer;
 import util.Address;
 
+/**
+ * reqid:read-return:pcid:xpos:ypos:seqid:val
+ * @author Christian
+ *
+ */
 public class ReadReturnMessage extends Message {
-	
-	private final String seqid, val;
-	
-	public ReadReturnMessage(Address sender, Address recipient, String reqid, String flag, String pcid, String val, String seqid) {
-		super(sender, recipient, reqid, flag, pcid, val, seqid);
-		this.seqid = seqid;
-		this.val = val;
+		
+	public ReadReturnMessage(Address sender, Address recipient, int reqid, int pcid, float x, float y, int seqid, String val) {
+		super(sender, recipient, reqid + "", DataServer.READ_RECEIPT_FLAG, pcid + "", x + "", y + "", seqid + "", val);
 	}
 	
-	public String getSeqID() {
-		return this.seqid;
+	public int getSeqID() {
+		return Integer.parseInt(this.parts[5]);
 	}
-	
 	public String getVal() {
-		return this.val;
+		return this.parts[6];
 	}
 	
 }

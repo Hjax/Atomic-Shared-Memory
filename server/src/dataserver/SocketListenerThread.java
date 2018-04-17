@@ -37,8 +37,6 @@ public class SocketListenerThread extends MessageListenerThread {
 	SocketListenerThread(DataServer server, DatagramSocket soc, int timeout) {
 		super(server);
 
-
-
 		try {
 			this.soc = soc;
 			this.soc.setSoTimeout(timeout);
@@ -59,11 +57,9 @@ public class SocketListenerThread extends MessageListenerThread {
 
 			if (packet != null) {
 				String s = "";
-
 				for (byte b : packet.getData())
 					if (b != 0)
 						s = s + (char) b;
-
 				return Message.construct(new Address(packet.getAddress(), packet.getPort()), localAddress, s.trim());
 			}
 

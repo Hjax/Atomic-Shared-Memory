@@ -11,9 +11,6 @@ public class Message {
 	private float xval = 0;
 	private float yval = 0;
 	
-	private String ip = null;
-	private int port = 0;
-	
 	private int droprate = 0;
 	
 	/*message formats:
@@ -28,9 +25,6 @@ public class Message {
 	 * drop			:	<reqid>:"drop":<dropfloat>
 	 * kill			:	<reqid>:"wait"
 	 * reliable read:	<reqid>:"reliable-read":<pcid>:"0.0":"0.0":<key>
-	 * add-server	:	<reqid>:"add-server":<pcid>:"0.0":"0.0":<ip>:<port>
-	 * remove-server:	<reqid>:"remove-server":<pcid>:"0.0":"0.0":<ip><port>
-	 * 
 	 */
 	
 	public Message(String messageString) throws RuntimeException
@@ -59,12 +53,6 @@ public class Message {
 			{buildKill(messageArray);}
 		else if (messageArray[1].equals("reliable-read"))
 			{buildReliableRead(messageArray);}
-		else if (messageArray[1].equals("add-server"))
-			{buildAddServer(messageArray);}
-		else if (messageArray[1].equals("remove-server"))
-			{buildRemoveServer(messageArray);}
-		else if (messageArray[1].equals("clear"))
-			{buildClear(messageArray);}
 		else
 		{
 			System.err.printf("Message was %s\n", messageString);
@@ -151,7 +139,7 @@ public class Message {
 		flag = messageArray[1];
 	}
 	
-	private void buildReliableRead(String[] messageArray) //change to assume positions = 0
+	private void buildReliableRead(String[] messageArray)
 	{
 		reqID = Integer.parseInt(messageArray[0]);
 		flag = messageArray[1];
@@ -159,37 +147,6 @@ public class Message {
 		xval = Float.parseFloat(messageArray[3]);
 		yval = Float.parseFloat(messageArray[4]);
 		key = messageArray[5];
-	}
-	
-	private void buildAddServer(String[] messageArray)
-	{
-		reqID = Integer.parseInt(messageArray[0]);
-		flag = messageArray[1];
-		pcID = Integer.parseInt(messageArray[2]);
-		xval = 0;
-		yval = 0;
-		ip = messageArray[3];
-		port = Integer.parseInt(messageArray[4]);
-	}
-	
-	private void buildRemoveServer(String[] messageArray)
-	{
-		reqID = Integer.parseInt(messageArray[0]);
-		flag = messageArray[1];
-		pcID = Integer.parseInt(messageArray[2]);
-		xval = 0;
-		yval = 0;
-		ip = messageArray[3];
-		port = Integer.parseInt(messageArray[4]);
-	}
-	
-	private void buildClear(String[] messageArray)
-	{
-		reqID = Integer.parseInt(messageArray[0]);
-		flag = messageArray[1];
-		pcID = Integer.parseInt(messageArray[2]);
-		xval = 0;
-		yval = 0;
 	}
 	
 	
@@ -225,15 +182,6 @@ public class Message {
 		seqID = newID;
 	}
 	
-	public void setIP(String newIP)
-	{
-		ip = newIP;
-	}
-	
-	public void setPort(int newPort)
-	{
-		port = newPort;
-	}
 	
 	//getters
 	
@@ -294,16 +242,6 @@ public class Message {
 		return droprate;
 	}
 	
-	public String getIp()
-	{
-		return ip;
-	}
-	
-	public int getPort()
-	{
-		return port;
-	}
-	
 	
 	public String formatMessage() //returns a string with the message contents properly formatted
 	{
@@ -325,12 +263,6 @@ public class Message {
 			{return formatKill();}
 		else if (flag.equals("reliable-read"))
 			{return formatReliableRead();}
-		else if (flag.equals("add-server"))
-			{return formatAddServer();}
-		else if (flag.equals("remove-server"))
-			{return formatRemoveServer();}
-		else if (flag.equals("clear"))
-			{return formatClear();}
 		else
 			{throw new RuntimeException("ERROR - message type unknown: " + flag);}
 	}
@@ -379,21 +311,6 @@ public class Message {
 	private String formatReliableRead()
 	{
 		return formatReadRequest();
-	}
-	
-	private String formatAddServer()
-	{
-		return String.valueOf(reqID) + ":" + flag + ":" + String.valueOf(pcID) + ":0:0:" + ip + ":" + String.valueOf(port);
-	}
-	
-	private String formatRemoveServer()
-	{
-		return String.valueOf(reqID) + ":" + flag + ":" + String.valueOf(pcID) + ":0:0:" + ip + ":" + String.valueOf(port);
-	}
-	
-	private String formatClear()
-	{
-		return String.valueOf(reqID) + ":" + flag + ":" + String.valueOf(pcID) + ":0:0";
 	}
 	
 }

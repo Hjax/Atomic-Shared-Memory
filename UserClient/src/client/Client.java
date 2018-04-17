@@ -20,7 +20,6 @@ public class Client {
 	float xpos = 0;
 	float ypos = 0;
 	int droprate = 0;
-	int resendDelay = 5000;
 	Random rng = new Random();
 	
 	public Client(int PCID, int PORT, HashSet<Server> SERVERS, float XPOS, float YPOS)
@@ -58,11 +57,9 @@ public class Client {
 			if (checkServer.equals(SERVER))
 			{
 				SERVERSET.remove(checkServer);
-				//System.err.printf("[i]	removed server: remaining servers = %d\n", servers.size());
 				return;
 			}
 		}
-		//System.err.printf("[i]	failed to remove server\n");
 	}
 	
 	//blocks until a management message is received. For testing purposes
@@ -123,11 +120,6 @@ public class Client {
 		droprate = newRate;
 	}
 	
-	public void setResendDelay(int newDelay)
-	{
-		resendDelay = newDelay;
-	}
-	
 	//the public read command that gets a value from the servers
 	public String read(String key) throws IOException
 	{
@@ -171,7 +163,7 @@ public class Client {
 		HashSet<Server> resendSet = sendRequests(messageBytes, socket);
 		
 		//wait for and read responses for most recent seqId
-		socket.setSoTimeout(resendDelay);
+		socket.setSoTimeout(5000);	//TODO : get better timeout duration
 		Message returnMessage = getResponses(socket, resendSet, messageBytes, 1);
 		socket.close();
 		return returnMessage;
@@ -186,7 +178,7 @@ public class Client {
 		//send the requests and set resendSet = serverSet
 		HashSet<Server> resendSet = sendRequests(messageBytes, socket);
 		
-		socket.setSoTimeout(resendDelay);
+		socket.setSoTimeout(5000);	//TODO : get better timeout duration
 		//wait for majority responses
 		getResponses(socket, resendSet, messageBytes, 0);
 		socket.close();
@@ -202,7 +194,7 @@ public class Client {
 		HashSet<Server> resendSet = sendRequests(messageBytes, socket);
 		
 		//wait for and read responses for most recent seqId
-		socket.setSoTimeout(resendDelay);
+		socket.setSoTimeout(5000);	//TODO : get better timeout duration
 		Message returnMessage = getResponses(socket, resendSet, messageBytes, 2);
 		//System.err.printf("%s\n",returnMessage.formatMessage());
 		socket.close();

@@ -31,15 +31,8 @@ public abstract class MessageListenerThread extends Thread {
 		Message message;
 
 		while(this.cont) {
-			try {
-				Thread.sleep(this.server.delay);
-			} catch (Exception e) {
-				// do nothing; we did our best
-				// non-fatal error; we just don't wait this time around
-			}
-			if ( (message = this.listen()) != null) {
+			if ( (message = this.listen()) != null)
 				this.parser.parse(message);
-			}
 		}
 
 	}
