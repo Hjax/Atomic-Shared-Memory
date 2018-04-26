@@ -106,6 +106,8 @@ public class Message {
 				e.printStackTrace();
 				return out;
 			}
+		else if (message.split(Message.DELIMITER).length == 2)
+			return new ShortMessage(recipient, sender, message);
 		else
 			return out;
 	}

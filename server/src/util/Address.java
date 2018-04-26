@@ -20,4 +20,9 @@ public class Address {
 	public int port() {
 		return this.port;
 	}
+	
+	@Override
+	public String toString() {
+		return this.addr + "." + this.port;
+	}
 }

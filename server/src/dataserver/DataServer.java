@@ -9,6 +9,7 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.concurrent.Semaphore;
 
 import util.Address;
 import util.Location;
@@ -27,7 +28,7 @@ import util.messages.*;
 public abstract class DataServer {
 
 	// The abstract methods of this object
-	
+
 	protected abstract void commitData(String key, String value, int timestamp);
 	protected abstract String getData(String key);
 	protected abstract int getTime(String key);
@@ -51,7 +52,7 @@ public abstract class DataServer {
 
 	public final Address localAddress;
 
-	
+
 	protected boolean awake = true;
 
 	/**
@@ -141,18 +142,19 @@ public abstract class DataServer {
 
 		// uses OHSAM_READ_REQUEST_FLAG and READ_REQUEST_FLAG instead of OHSAM_ALGORITHM_FLAG and ABD_ALGORITHM_FLAG because this is the only place those algorithm
 		// flags would be used and there is no reason to have multiple message types for the same algorithm. 
-		
 		if (flag.equals(DataServer.OHSAM_READ_REQUEST_FLAG)) {
 
-			this.addRelay(clientid, reqid, seqid, key, value, returnAddress);
+			OhSamRelayMessage message = new OhSamRelayMessage(returnAddress, this.localAddress, reqid, clientid, clientxpos, clientypos, clientid, seqid, key, value, returnAddress, clientypos, clientypos);
+
+			this.addRelay(message);
 			for (Address recipient : this.addresses)
 				this.send(new OhSamRelayMessage(this.localAddress, recipient, reqid, this.id, this.location.x, this.location.y, clientid, seqid, key, value, returnAddress, clientxpos, clientypos));
-			
+
+
 		}
 
 		else if (flag.equals(DataServer.READ_REQUEST_FLAG) || flag.equals(DataServer.RELIABLE_READ_FLAG)) {
-			
-			// 
+
 			if (value == null && seqid <= 0) {
 				this.send(new ReadReturnMessage(new Address(this.soc.getLocalAddress(), this.soc.getLocalPort()), returnAddress, 
 						reqid, this.id, clientxpos, clientypos, 0, 
@@ -217,32 +219,65 @@ public abstract class DataServer {
 		public final int clientid, reqid;
 		protected int count = 0;
 
+		final DataServer server;
+
+		Semaphore addressSemaphore = new Semaphore(1);
+
 		/**
 		 * A hashset is used because set objects have an O(1) complexity for contains(arg) and add(arg)
 		 * This is useful the set has hundreds or thousands of server addresses stored
 		 */
 		private HashSet<Address> addresses = new HashSet<Address>();
 
-		public OhSamRequest(int clientid, int reqid) {
+		public OhSamRequest(int clientid, int reqid, DataServer server) {
+
+			this.server = server;
 			this.clientid = clientid;
 			this.reqid = reqid;
+
+			//this.addRelay(localAddress);
+
 		}
 
 		int reqID() {
 			return this.reqid;
 		}
+
 		void addRelay(Address address) {
-			if (!this.addresses.contains(address)) {
+
+			try {
+				
+				addressSemaphore.acquire(); // this is the line that throws the interrupted exception
+
+				for (Address addr : this.addresses)
+					if (addr.toString().equals(address.toString()))
+						return; // We already have the address, so return
+
+				// else, we get here and add the address
 				this.addresses.add(address);
+
+				addressSemaphore.release();
+
 				this.count++;
+
+			} catch (InterruptedException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				// release the semaphore to avoid deadlock in the case of this catch
+				this.addressSemaphore.release();
+				// try it again
+				addRelay(address);
 			}
-			
-			
+
+
 		}
 		int count() {
 			return this.count;
 		}
 	}
+
+
+
 	private LinkedHashMap<Integer, OhSamRequest> requests = new LinkedHashMap<Integer, OhSamRequest>();
 	public final int getNumRelays(int reqid, int pcid) {
 		OhSamRequest request = this.requests.get(pcid);
@@ -257,48 +292,85 @@ public abstract class DataServer {
 		else
 			return request.count;
 	}
-	public final void addRelay(int pcid, int reqid, int newSeqid, String key, String value, Address address) {
+	public final void addRelay(OhSamRelayMessage message) {
+
+
+		int clientid = message.getClientID();
+		int reqid = message.getReqID();
+		int newSeqid = message.getSeqID();
+		String key = message.getKey();
+		String value = message.getValue();
+		float clientxpos = message.clientX();
+		float clientypos = message.clientY();
+
+		Address returnAddress = message.sender();
+
 		// first, get the request (if there is one)
-		OhSamRequest request = this.requests.get(pcid);
+		OhSamRequest request = this.requests.get(clientid);
 
 		// FIRST PART: Seeing if we need to update an OhSamRequest.
 		// 1. If there is no current OhSamRequest for the client
 		// 2. If our OhSamRequest is old and the client doesn't want it anymore
 		// 3. If our OhSamRequest is current and we want to update it
-		
+
 		// if there is no request, make a new one and add it in
-		if (!this.requests.containsKey(pcid)) {
-			request = new OhSamRequest(pcid, reqid);
-			this.requests.put(pcid, request);
+		if (!this.requests.containsKey(clientid)) {
+
+			request = new OhSamRequest(clientid, reqid, this);
+			this.requests.put(clientid, request);
+			request.addRelay(returnAddress);
+
+
+
 		}
 
 		// if the client reqid is NEWER (of higher value) than the reqid of the request we're currently handling,
 		// then we know the client already got all the responses it needs from other servers and has moved on to
 		// another request
 		else if (reqid > request.reqid) {
-			request = new OhSamRequest(pcid, reqid);
-			request.addRelay(address);
-			this.requests.put(pcid, request);
+
+			// clear out the old request
+			this.requests.remove(clientid);
+
+			// create the new request
+			request = new OhSamRequest(clientid, reqid, this);
+
+			// add the relay (its first) to the request
+			request.addRelay(returnAddress);
+
+			// add the request to our map
+			this.requests.put(clientid, request);
 		}
 
 		// else, we have a valid request id and we're good.
 		else
-			request.addRelay(address);
+			request.addRelay(returnAddress);
 
 		// SECOND PART: Updating the server if the relay has given us something useful
-		
+
 		int oldSeqid = this.getTime(key);
+
+		if (this.getNumRelays(reqid, clientid) == this.quorum()) {
+			this.send(new ReadReturnMessage(
+					this.localAddress, 
+					message.getAddress(), 
+					reqid, 
+					this.id,
+					clientxpos,
+					clientypos,
+					this.getTime(key), 
+					this.getData(key)));
+		}
+
 
 		// seqids with higher value are considered "newer"
 		if (newSeqid > oldSeqid)
 			this.commitData(key, value, newSeqid);
 
 
-
-
 	}
 
-	public final double DISTANCE_PING_RATIO = 10.0; // 1ms ping / unit distance
+	public final double DISTANCE_PING_RATIO = 1.0; // 1ms ping / unit distance
 	/**
 	 * 
 	 * @param targetX
@@ -316,13 +388,12 @@ public abstract class DataServer {
 
 
 		// returns double rounded to nearest long, which is good enough
-		
-		System.out.println("Ping: " + distance);
-		
+
+
 		return (long) (distance * DISTANCE_PING_RATIO / 2);
 	}
 
-	
+
 	/**
 	 * Sends a message. The recipient of this message is stored in the Message object
 	 * The message is sent via a MessageSender object for two reasons:
@@ -331,7 +402,7 @@ public abstract class DataServer {
 	 * @param message The message to be sent
 	 */
 	protected void send(Message message) {		
-		System.out.println("Sending to\t" + message.recipient().addr() + "\t:\t" + message.toString());
+		System.out.println("Sending to\t" + message.recipient().addr() + ":" + message.recipient().port() + "\t:\t" + message.toString());
 		new SocketMessageSender(this.soc, message, this).start();
 	}	
 	private abstract class MessageSender extends Thread {

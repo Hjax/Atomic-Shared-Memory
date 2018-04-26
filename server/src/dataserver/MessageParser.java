@@ -32,7 +32,7 @@ public class MessageParser {
 		}
 
 
-		System.out.println("Message from\t" + message.sender().addr() + "\t:\t" + message);
+		System.out.println("Message from\t" + message.sender().addr() + ":" + message.sender().port() + "\t:\t" + message);
 
 		String flag = message.getFlag();
 
@@ -42,8 +42,14 @@ public class MessageParser {
 			System.out.println("Flag null. No operations performed. Message: " + message);
 			return;
 		}
-		
-		if (message instanceof ReliableReadMessage)
+
+		/* ===============================================================================
+		 * === SUPERUSER MESSAGES ========================================================
+		 * ===============================================================================
+		 * 
+		 * These are messages meant to be used for checking and setting the state of the servers
+		 */
+		if (message instanceof ReliableReadMessage) {
 			this.server.read(
 					((ReliableReadMessage) message).getKey(), 
 					((ReliableReadMessage) message).sender(),
@@ -52,69 +58,104 @@ public class MessageParser {
 					((ReliableReadMessage) message).getFlag(),
 					this.server.getLocation().x,
 					this.server.getLocation().y);
-		else if (message instanceof SetLocationMessage)
+			return;
+		}
+		else if (message instanceof SetLocationMessage) {
 			this.server.setLocation(
 					((SetLocationMessage) message).getX(),
 					((SetLocationMessage) message).getY());
-		else {
-			// Check to see if the server is asleep. If it is, we just leave.
-			if (!this.server.awake) {
-				if (flag.equals("wake"))
-					this.server.wake();
-				else
-					return;
-			}
-
-			// Control messages -- not affected by drop rate, but affected by server being awake or not
-			if (flag.equals("respond"))
-				this.server.send(new Message(
-						message.recipient(), 
-						message.sender(),
-						"response"));
-
-			if (flag.equals("drop"))
-				this.server.droprate = Integer.parseInt(message.get(2));
-
-			// Replies back to server 
-			// TODO deprecate this
-			else if (flag.equals("echo"))
-				this.server.send(new Message(
-						message.recipient(), 
-						message.sender(),  
-						message.toString()));
-
-			// Sleep functions
-			else if (flag.equals("wait"))
-				this.server.sleep();
-
-
-
-			// else, on to the messages affected by drop rate...
-			// this could be in the if/else chain that already exists by putting the if-statement handling the drop as an else-if,
-			// but I think this way is a little clearer.
-			else {
-				try {
-					// 1/droprate probability of just ignoring this message
-					if (new Random().nextInt(100) < this.server.droprate)
-						return;
-
-					else
-						new ClientPingSimulator(this.server, message, this.server.getPing(message.getX(), message.getY())).start();
-				} catch (IndexOutOfBoundsException e) {
-					System.out.println("ERROR: Something was out of bounds for the message " + message);
-					e.printStackTrace();
-				} catch (NullPointerException e) {
-					System.out.println("ERROR: Something was null when handling the message " + message);
-					e.printStackTrace();
-				} catch (Exception e) {
-					System.out.println("ERROR: Something went wrong when handling the message " + message);
-					e.printStackTrace();
-				}
-			}
-
-			// we should be done now
 			return;
 		}
+		// sets droprate
+		else if (flag.equals("drop")) {
+			this.server.droprate = Integer.parseInt(message.get(2));
+			return;
+		}
+
+		/* ###############################################################################
+		 * ### WAKE MESSAGE ##############################################################
+		 * ###############################################################################
+		 * 
+		 * This controls whether the server is awake or not.
+		 * ALL MESSAGES AFTER THIS CASE ARE DROPPED IF THE SERVER IS ASLEEP
+		 */
+
+		// Check to see if the server is asleep. If it is, we just leave.
+		else if (!this.server.awake) {
+			if (flag.equals("wake"))
+				this.server.wake();
+			else
+				return;
+		}
+
+		/* ===============================================================================
+		 * === SHORT MESSAGES ============================================================
+		 * ===============================================================================
+		 * 
+		 * These are messages that are used by the control client for testing
+		 */
+
+		// Control messages -- not affected by drop rate, but affected by server being awake or not
+		else if (flag.equals("respond")) {
+			this.server.send(new Message(
+					message.recipient(), 
+					message.sender(),
+					"response"));
+			return;
+		}
+
+		// Replies back to server 
+		// TODO deprecate this
+		else if (flag.equals("echo")) {
+			this.server.send(new Message(
+					message.recipient(), 
+					message.sender(),  
+					message.toString()));
+			return;
+		}
+
+		// Sleep functions
+		else if (flag.equals("wait")) {
+			this.server.sleep();
+			return;
+		}
+
+
+
+		/* ===============================================================================
+		 * === STANDARD MESSAGES =========================================================
+		 * ===============================================================================
+		 * 
+		 * These are messages that would be used by a regular client. We outsource this to 
+		 * another object for the purpose of not blocking our MessageParser with Thread.sleep()'s
+		 */
+
+		// else, on to the messages affected by drop rate...
+		else {
+
+			try {
+
+				// 1/droprate probability of just ignoring this message
+				if (new Random().nextInt(100) < this.server.droprate)
+					return;
+
+				else
+					new ClientPingSimulator(this.server, message, this.server.getPing(message.getX(), message.getY())).start();
+				
+			} catch (IndexOutOfBoundsException e) {
+				System.out.println("ERROR: Something was out of bounds for the message " + message);
+				e.printStackTrace();
+			} catch (NullPointerException e) {
+				System.out.println("ERROR: Something was null when handling the message " + message);
+				e.printStackTrace();
+			} catch (Exception e) {
+				System.out.println("ERROR: Something went wrong when handling the message " + message);
+				e.printStackTrace();
+			}
+		}
+
+		// we should be done now
+		return;
 
 	}
 
@@ -163,7 +204,7 @@ public class MessageParser {
 						((ReadRequestMessage) message).getY());
 
 			}
-			else if (message instanceof OhSamReadRequestMessage) {
+			else if(message instanceof OhSamReadRequestMessage) {
 				this.server.read(
 						((OhSamReadRequestMessage) message).getKey(), 
 						((OhSamReadRequestMessage) message).sender(),
@@ -176,33 +217,22 @@ public class MessageParser {
 
 			// get these messages from servers
 			else if (message instanceof OhSamRelayMessage) {
-				int reqid = message.getReqID();
-				int clientid = ((OhSamRelayMessage) message).getClientID();
-				this.server.addRelay(
-						((OhSamRelayMessage) message).getClientID(),
-						((OhSamRelayMessage) message).getReqID(), 
-						((OhSamRelayMessage) message).getSeqID(), 
-						((OhSamRelayMessage) message).getKey(), 
-						((OhSamRelayMessage) message).getValue(),
-						((OhSamRelayMessage) message).sender());
+				this.server.addRelay((OhSamRelayMessage) message);
 
 				// TODO should sending the message be handled here, or inside the OhSamRequest object?
 				// pros to handling here: don't have to pass as many arguments around between methods
 				// cons to handling here: more work for this thread = slower thread = slower throughput of messages
-
-				if (this.server.getNumRelays(reqid, clientid) == this.server.quorum())
-					this.server.send(new ReadReturnMessage(
-							this.server.localAddress, 
-							((OhSamRelayMessage) message).getAddress(), 
-							((OhSamRelayMessage) message).getReqID(), 
-							this.server.id,
-							((OhSamRelayMessage) message).clientX(),
-							((OhSamRelayMessage) message).clientY(),
-							this.server.getTime(((OhSamRelayMessage) message).getKey()), 
-							this.server.getData(((OhSamRelayMessage) message).getKey())));
+				
+				/*
+				int reqid = message.getReqID();
+				int clientid = ((OhSamRelayMessage) message).getClientID();
+				
+				System.out.println(this.server.getNumRelays(reqid, clientid) + " and " + this.server.quorum());
+				*/
 
 			}
 			else {
+				
 				System.out.println("Could not recognize message: " + message);
 			}
 		}
