@@ -296,7 +296,7 @@ public class Client {
 				}
 				else if (response.getReqID() == reqID && rng.nextInt(100) >= droprate)
 				{
-					System.err.printf("got a response\n");
+					System.err.printf("got a response from: Address=%s port=%d\n", packet.getAddress().getHostAddress(), packet.getPort());
 					
 					System.err.printf(response.formatMessage() + "\n");
 					
