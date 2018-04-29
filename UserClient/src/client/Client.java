@@ -48,7 +48,7 @@ public class Client {
 	}
 	
 
-	private void removeServerFromSet(Server SERVER, HashSet<Server> SERVERSET)
+	private boolean removeServerFromSet(Server SERVER, HashSet<Server> SERVERSET)
 	{
 		Iterator<Server> removeIterator = SERVERSET.iterator();
 		Server checkServer;
@@ -59,9 +59,10 @@ public class Client {
 			{
 				SERVERSET.remove(checkServer);
 				//System.err.printf("[i]	removed server: remaining servers = %d\n", servers.size());
-				return;
+				return true;
 			}
 		}
+		return false;
 		//System.err.printf("[i]	failed to remove server\n");
 	}
 	
@@ -137,7 +138,7 @@ public class Client {
 		return value.getValue();
 	}
 	
-	//the public write command that writes a value to the servers
+	//the public write command that writes a value to the servers following multiple-writer protocol
 	public void write(String key, String value) throws IOException
 	{
 		reqID++;
@@ -145,14 +146,29 @@ public class Client {
 		writeMessage(key, value, seqID.getSeqID() + 1);
 	}
 	
+	//the public write command that writes a value to the servers following single-writer protocol
+	public void singleWrite(String key, String value) throws IOException
+	{
+		reqID++;
+		writeMessage(key, value, reqID);
+	}
+	
+	public void ohmamWrite(String key, String value) throws IOException
+	{
+		reqID++;
+		System.err.printf("about to read before ohmam-writing\n");
+		Message seqID = readMessage(key);
+		System.err.printf("about to ohmam-write\n");
+		//System.err.printf("Final seqID is %d\n", seqID.getSeqID());
+		writeMessage(key, value, seqID.getSeqID() + 1);
+	}
+	
 	public void ohsamWrite(String key, String value) throws IOException
 	{
 		reqID++;
-		System.err.printf("about to read before ohsam-writing\n");
-		Message seqID = readMessage(key);
 		System.err.printf("about to ohsam-write\n");
 		//System.err.printf("Final seqID is %d\n", seqID.getSeqID());
-		writeMessage(key, value, seqID.getSeqID() + 1);
+		writeMessage(key, value, reqID);
 	}
 	
 	public String ohsamRead(String key) throws IOException
@@ -286,22 +302,28 @@ public class Client {
 					
 					//TODO: MAKE THIS NOT HORRIBLE
 					receivedServer = new Server(packet.getAddress(), packet.getPort());
-					removeServerFromSet(receivedServer, resendSet);
-					
-					//track most recent data
-					//System.err.printf("seqid from response is %d\n", response.getSeqID());
-					if (operation == 1 && (bestResponse.getSeqID() == -10 || (response.getSeqID() > bestResponse.getSeqID() || (response.getSeqID() == bestResponse.getSeqID() && response.getPcID() >= bestResponse.getPcID()))))
+					if (removeServerFromSet(receivedServer, resendSet))
 					{
-						bestResponse = new Message(response.formatMessage());
-						//System.err.printf("updating best response\n");
-					}
 					
-					if (operation == 2 && (bestResponse.getSeqID() == -10 || (response.getSeqID() < bestResponse.getSeqID() || (response.getSeqID() == bestResponse.getSeqID() && response.getPcID() >= bestResponse.getPcID()))))
-					{
-						bestResponse = new Message(response.formatMessage());
-						//System.err.printf("updating best response\n");
+						//track most recent data
+						//System.err.printf("seqid from response is %d\n", response.getSeqID());
+						if (operation == 1 && (bestResponse.getSeqID() == -10 || (response.getSeqID() > bestResponse.getSeqID() || (response.getSeqID() == bestResponse.getSeqID() && response.getPcID() >= bestResponse.getPcID()))))
+						{
+							bestResponse = new Message(response.formatMessage());
+							//System.err.printf("updating best response\n");
+						}
+					
+						if (operation == 2 && (bestResponse.getSeqID() == -10 || (response.getSeqID() < bestResponse.getSeqID() || (response.getSeqID() == bestResponse.getSeqID() && response.getPcID() >= bestResponse.getPcID()))))
+						{
+							bestResponse = new Message(response.formatMessage());
+							//System.err.printf("updating best response\n");
+						}
+						i++;
 					}
-					i++;
+					else
+					{
+						System.err.printf("response was a duplicate\n");
+					}
 				}
 				
 			}

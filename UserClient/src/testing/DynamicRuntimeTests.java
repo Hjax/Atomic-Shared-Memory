@@ -27,8 +27,10 @@ import util.Server;
    To remove a server from a client:	"removeserver" *clientName* *serverName*
    To read:								"read" *clientName* *key*
    To oh-SAM read:						"ohsamread" *clientName* *key*
-   To write:							"write" *clientName* *key* *value*
+   To write with multiple writers:		"write" *clientName* *key* *value*
+   To write with single writer:			"singleWrite" *clientName* *key* *value*
    To oh-SAM write:						"ohsamwrite" *clientName* *key* *value*
+   To oh-MAM write:						"ohmamwrite" *clientName* *key* *value*
    
    Manager Commands:
    To set the port to use for manager:	"managerport" *port#*
@@ -66,7 +68,9 @@ public class DynamicRuntimeTests {
 		commands.put("read",			(String[] args)		-> 	read(args));
 		commands.put("ohsamread",		(String[] args)		-> 	ohsamRead(args));
 		commands.put("write",			(String[] args)		-> 	write(args));
+		commands.put("singlewrite",		(String[] args)		-> 	singleWrite(args));
 		commands.put("ohsamwrite",		(String[] args)		-> 	ohsamWrite(args));
+		commands.put("ohmamwrite",		(String[] args)		-> 	ohmamWrite(args));
 		commands.put("addserver",		(String[] args)		-> 	addServer(args));
 		commands.put("newserver",		(String[] args)		-> 	createServer(args));
 		commands.put("newclient",		(String[] args)		-> 	createClient(args));
@@ -257,8 +261,18 @@ public class DynamicRuntimeTests {
 		System.out.println("[w]\t" + input[2] + "->" + input[3]);
 	}
 	
+	private static void singleWrite(String[] input) throws IOException {
+		clients.get(input[1]).singleWrite(input[2], input[3]);
+		System.out.println("[w]\t" + input[2] + "->" + input[3]);
+	}
+	
 	private static void ohsamWrite(String[] input) throws IOException {
 		clients.get(input[1]).ohsamWrite(input[2], input[3]);
+		System.out.println("[w]\t" + input[2] + "->" + input[3]);
+	}
+	
+	private static void ohmamWrite(String[] input) throws IOException {
+		clients.get(input[1]).ohmamWrite(input[2], input[3]);
 		System.out.println("[w]\t" + input[2] + "->" + input[3]);
 	}
 	
