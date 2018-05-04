@@ -37,18 +37,18 @@ public class Client {
 		
 	}
 	
-	public void addServer(Server SERVER)
+	public void addServer(Server SERVER)	//VIOLATES ATOMICITY - USE WITH CARE
 	{
 		servers.add(SERVER);
 	}
 	
-	public void removeServer(Server SERVER)
+	public void removeServer(Server SERVER)		//for oh-SAM/oh-MAM, the servers must also be informed
 	{
 		removeServerFromSet(SERVER, servers);
 	}
 	
 
-	private boolean removeServerFromSet(Server SERVER, HashSet<Server> SERVERSET)
+	private boolean removeServerFromSet(Server SERVER, HashSet<Server> SERVERSET)	//DEPRECATED
 	{
 		if (SERVERSET.contains(SERVER))
 		{
@@ -106,18 +106,18 @@ public class Client {
 		
 	}
 	
-	public void setLoc(float newX, float newY)
+	public void setLoc(float newX, float newY)		//sets client's simulated position for simulated ping
 	{
 		xpos = newX;
 		ypos = newY;
 	}
 	
-	public void setDroprate(int newRate)
+	public void setDroprate(int newRate)		//sets client's simulated packet drop rate
 	{
 		droprate = newRate;
 	}
 	
-	public void setResendDelay(int newDelay)
+	public void setResendDelay(int newDelay)	//sets how long client will wait for responses before assuming packet loss and resending
 	{
 		resendDelay = newDelay;
 	}
@@ -146,24 +146,24 @@ public class Client {
 		writeMessage(key, value, reqID);
 	}
 	
+	//duplicate of write method
 	public void ohmamWrite(String key, String value) throws IOException
 	{
 		reqID++;
-		System.err.printf("about to read before ohmam-writing\n");
 		Message seqID = readMessage(key);
-		System.err.printf("about to ohmam-write\n");
-		//System.err.printf("Final seqID is %d\n", seqID.getSeqID());
 		writeMessage(key, value, seqID.getSeqID() + 1);
 	}
 	
+	
+	//duplicate of singleWrite method
 	public void ohsamWrite(String key, String value) throws IOException
 	{
 		reqID++;
-		System.err.printf("about to ohsam-write\n");
-		//System.err.printf("Final seqID is %d\n", seqID.getSeqID());
 		writeMessage(key, value, reqID);
 	}
 	
+	
+	//public command that performs and oh-SAM/oh-MAM read
 	public String ohsamRead(String key) throws IOException
 	{
 		reqID++;
@@ -220,6 +220,7 @@ public class Client {
 	
 
 	//used by writeMessaged and readMessage
+	//sends a message to all known servers, responds a duplicate of the known servers set
 	private HashSet<Server> sendRequests(byte[] messageBytes, DatagramSocket socket) throws IOException
 	{
 		DatagramPacket packet;
@@ -239,8 +240,8 @@ public class Client {
 
 	//used by writeMessage and readMessage
 	//operation == 0: write
-	//operation == 1: read
-	//operation == 2: oh-SAM
+	//operation == 1: ABD read
+	//operation == 2: oh-SAM read
 	private Message getResponses(DatagramSocket socket, HashSet<Server> awaitingSet, byte[] messageBytes, int operation) throws IOException
 	{
 		int i = 0;
@@ -274,6 +275,7 @@ public class Client {
 					throw e;
 				}
 				System.err.printf("found a packet, reqID = %d\n", response.getReqID());
+				//if packet is a management packet, handle it appropriately
 				if (response.getFlag().equals("set-location"))
 				{
 					xpos = response.getXVal();
@@ -287,25 +289,23 @@ public class Client {
 				{
 					System.err.printf("received a kill command for some reason. Ignoring it\n");
 				}
-				else if (response.getReqID() == reqID && rng.nextInt(100) >= droprate)
+				else if (response.getReqID() == reqID && rng.nextInt(100) >= droprate)			//check reqID to make sure it isn't an old request
 				{
 					System.err.printf("got a response from: Address=%s port=%d\n", packet.getAddress().getHostAddress(), packet.getPort());
 					
 					System.err.printf(response.formatMessage() + "\n");
 					
-					//TODO: MAKE THIS NOT HORRIBLE
 					receivedServer = new Server(packet.getAddress(), packet.getPort());
 					if (removeServerFromSet(receivedServer, awaitingSet))
 					{
-					
-						//track most recent data
-						//System.err.printf("seqid from response is %d\n", response.getSeqID());
+					    //-10 is the default seqID indicating no response has been received yet
+						//ABD reads take the largest seqID
 						if (operation == 1 && (bestResponse.getSeqID() == -10 || (response.getSeqID() > bestResponse.getSeqID() || (response.getSeqID() == bestResponse.getSeqID() && response.getPcID() >= bestResponse.getPcID()))))
 						{
 							bestResponse = new Message(response.formatMessage());
 							//System.err.printf("updating best response\n");
 						}
-					
+					    //oh-SAM reads take the smallest seqID
 						if (operation == 2 && (bestResponse.getSeqID() == -10 || (response.getSeqID() < bestResponse.getSeqID() || (response.getSeqID() == bestResponse.getSeqID() && response.getPcID() >= bestResponse.getPcID()))))
 						{
 							bestResponse = new Message(response.formatMessage());
