@@ -50,17 +50,10 @@ public class Client {
 
 	private boolean removeServerFromSet(Server SERVER, HashSet<Server> SERVERSET)
 	{
-		Iterator<Server> removeIterator = SERVERSET.iterator();
-		Server checkServer;
-		while (removeIterator.hasNext())
+		if (SERVERSET.contains(SERVER))
 		{
-			checkServer = removeIterator.next();
-			if (checkServer.equals(SERVER))
-			{
-				SERVERSET.remove(checkServer);
-				//System.err.printf("[i]	removed server: remaining servers = %d\n", servers.size());
-				return true;
-			}
+			SERVERSET.remove(SERVER);
+			return true;
 		}
 		return false;
 		//System.err.printf("[i]	failed to remove server\n");
@@ -183,12 +176,12 @@ public class Client {
 		DatagramSocket socket = new DatagramSocket(port);
 		byte[] messageBytes = (reqID + ":" + "read-request:" + pcid + ":" + String.valueOf(xpos) + ":" + String.valueOf(ypos) + ":" + key).getBytes();
 		
-		//send the requests and set resendSet = serverSet
-		HashSet<Server> resendSet = sendRequests(messageBytes, socket);
+		//send the requests and set awaitingSet = serverSet
+		HashSet<Server> awaitingSet = sendRequests(messageBytes, socket);
 		
 		//wait for and read responses for most recent seqId
 		socket.setSoTimeout(resendDelay);
-		Message returnMessage = getResponses(socket, resendSet, messageBytes, 1);
+		Message returnMessage = getResponses(socket, awaitingSet, messageBytes, 1);
 		socket.close();
 		return returnMessage;
 	}
@@ -199,12 +192,12 @@ public class Client {
 		DatagramSocket socket = new DatagramSocket(port);
 		byte[] messageBytes = (reqID + ":" + "write-request:" + pcid + ":" + String.valueOf(xpos) + ":" + String.valueOf(ypos) + ":" + seqId + ":" + key + ":" + value).getBytes();	
 		
-		//send the requests and set resendSet = serverSet
-		HashSet<Server> resendSet = sendRequests(messageBytes, socket);
+		//send the requests and set awaitingSet = serverSet
+		HashSet<Server> awaitingSet = sendRequests(messageBytes, socket);
 		
 		socket.setSoTimeout(resendDelay);
 		//wait for majority responses
-		getResponses(socket, resendSet, messageBytes, 0);
+		getResponses(socket, awaitingSet, messageBytes, 0);
 		socket.close();
 	}
 	
@@ -214,12 +207,12 @@ public class Client {
 		DatagramSocket socket = new DatagramSocket(port);
 		byte[] messageBytes = (reqID + ":" + "ohsam-read-request:" + pcid + ":" + String.valueOf(xpos) + ":" + String.valueOf(ypos) + ":" + key).getBytes();
 		
-		//send the requests and set resendSet = serverSet
-		HashSet<Server> resendSet = sendRequests(messageBytes, socket);
+		//send the requests and set awaitingSet = serverSet
+		HashSet<Server> awaitingSet = sendRequests(messageBytes, socket);
 		
 		//wait for and read responses for most recent seqId
 		socket.setSoTimeout(resendDelay);
-		Message returnMessage = getResponses(socket, resendSet, messageBytes, 2);
+		Message returnMessage = getResponses(socket, awaitingSet, messageBytes, 2);
 		//System.err.printf("%s\n",returnMessage.formatMessage());
 		socket.close();
 		return returnMessage;
@@ -230,17 +223,17 @@ public class Client {
 	private HashSet<Server> sendRequests(byte[] messageBytes, DatagramSocket socket) throws IOException
 	{
 		DatagramPacket packet;
-		HashSet<Server> resendSet = new HashSet<Server>(servers.size());
+		HashSet<Server> awaitingSet = new HashSet<Server>(servers.size());
 		Iterator<Server> serverIterator = servers.iterator();
 		Server destinationServer;
 		while (serverIterator.hasNext())
 		{
 			destinationServer = serverIterator.next();
-			resendSet.add(destinationServer);
+			awaitingSet.add(destinationServer);
 			packet = new DatagramPacket(messageBytes, messageBytes.length, destinationServer.getAddress(), destinationServer.getPort());
 			socket.send(packet);
 		}
-		return resendSet;
+		return awaitingSet;
 	}
 	
 
@@ -248,7 +241,7 @@ public class Client {
 	//operation == 0: write
 	//operation == 1: read
 	//operation == 2: oh-SAM
-	private Message getResponses(DatagramSocket socket, HashSet<Server> resendSet, byte[] messageBytes, int operation) throws IOException
+	private Message getResponses(DatagramSocket socket, HashSet<Server> awaitingSet, byte[] messageBytes, int operation) throws IOException
 	{
 		int i = 0;
 		boolean timeout = false;
@@ -302,7 +295,7 @@ public class Client {
 					
 					//TODO: MAKE THIS NOT HORRIBLE
 					receivedServer = new Server(packet.getAddress(), packet.getPort());
-					if (removeServerFromSet(receivedServer, resendSet))
+					if (removeServerFromSet(receivedServer, awaitingSet))
 					{
 					
 						//track most recent data
@@ -329,7 +322,7 @@ public class Client {
 			}
 			else	//timed out without finding a packet, so retransmit to remaining servers
 			{
-				Iterator<Server> resendIterator = resendSet.iterator();
+				Iterator<Server> resendIterator = servers.iterator();
 				while (resendIterator.hasNext())
 				{
 					destinationServer = resendIterator.next();
@@ -337,7 +330,7 @@ public class Client {
 						catch (RuntimeException e)
 						{
 							socket.close();
-							throw new RuntimeException("ERROR - resendSet smaller than expected\n");
+							throw new RuntimeException("ERROR - failed to resend\n");
 						}
 					try {
 						socket.send(packet);

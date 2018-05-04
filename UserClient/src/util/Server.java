@@ -39,12 +39,24 @@ public class Server {
 		return port;
 	}
 	
-	public boolean equals(Server other)
+	@Override
+	public boolean equals(Object other)
 	{
-		if (address.equals(other.getAddress()) && port == other.getPort())
+		if (other == this)
+		{
+			return true;
+		}
+		Server tempOther = (Server) other;
+		if (address.equals(tempOther.getAddress()) && port == tempOther.getPort())
 			{return true;}
 		else
 			{return false;}
+	}
+	
+	@Override
+	public int hashCode()
+	{
+		return 37 * port + address.toString().hashCode();
 	}
 
 }
