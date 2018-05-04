@@ -65,7 +65,7 @@ class API:
         self.command("write clientAPI color " + hex(color[0])[2:].zfill(2) + hex(color[1])[2:].zfill(2) + hex(color[2])[2:].zfill(2))
 
     def set_location(self, server, location):
-        self.raw_command("setloc " + server + " " + str(float(location[0])) + " " + str(float(location[1])))
+        self.raw_command("setloc " + server + " " + str(float(location[0]) * 5) + " " + str(float(location[1])) * 5)
 
 red = pygame.Rect((650, 50, 80, 50))
 green = pygame.Rect((650, 250, 80, 50))
