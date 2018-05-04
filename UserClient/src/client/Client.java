@@ -23,6 +23,18 @@ public class Client {
 	int resendDelay = 5000;
 	Random rng = new Random();
 	
+	public Client(int PCID, int PORT, HashSet<Server> SERVERS)
+	{
+		pcid = PCID;
+		port = PORT;
+		Iterator<Server> serverIterator = SERVERS.iterator();
+		while (serverIterator.hasNext())
+		{
+			servers.add(serverIterator.next());
+		}
+		
+	}
+	
 	public Client(int PCID, int PORT, HashSet<Server> SERVERS, float XPOS, float YPOS)
 	{
 		pcid = PCID;
