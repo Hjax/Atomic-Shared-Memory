@@ -17,10 +17,6 @@ import util.Address;
  */
 public class MemoryDataServer extends DataServer {
 
-	
-	
-	
-	
 	/**
 	 * The primary constructor for a MemoryDataServer object.
 	 * @param serverid	The identification number that distinguishes this DataServer from other DataServers
@@ -79,6 +75,34 @@ public class MemoryDataServer extends DataServer {
 		}
 		
 		
+		
+	}
+
+	@Override
+	public void clear() {
+		
+		try {
+			this.addressSemaphore.acquire();
+		
+			this.addresses.clear();
+			
+			this.addressSemaphore.release();
+		} catch (InterruptedException e) {
+			
+			
+			e.printStackTrace();
+			this.addressSemaphore.release();
+			this.clear();
+			
+		}
+		
+
+		this.requests.clear();
+		
+		this.TIME.clear();
+		this.DATA.clear();
+		
+		return;
 		
 	}
 

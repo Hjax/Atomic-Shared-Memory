@@ -3,6 +3,7 @@ package dataserver;
 
 import java.util.Random;
 
+import util.Address;
 import util.messages.*;
 
 
@@ -71,7 +72,15 @@ public class MessageParser {
 			this.server.droprate = Integer.parseInt(message.get(2));
 			return;
 		}
+		else if (flag.equals(DataServer.ADD_SERVER_FLAG))
+			this.server.addServer(new Address(message.get(5), message.get(6)));
+		
+		else if (flag.equals(DataServer.REMOVE_SERVER_FLAG))
+			this.server.removeServer(new Address(message.get(5), message.get(6)));
 
+		else if (flag.equals(DataServer.CLEAR_ALL_FLAG))
+			this.server.clear();
+		
 		/* ###############################################################################
 		 * ### WAKE MESSAGE ##############################################################
 		 * ###############################################################################
@@ -136,8 +145,10 @@ public class MessageParser {
 			try {
 
 				// 1/droprate probability of just ignoring this message
-				if (new Random().nextInt(100) < this.server.droprate)
-					return;
+				if (new Random().nextInt(100) < this.server.droprate) {
+					System.out.println("Dropping message \t\t\t:\t\t" + message);
+					return;	
+				}
 
 				else
 					new ClientPingSimulator(this.server, message, this.server.getPing(message.getX(), message.getY())).start();
@@ -159,6 +170,17 @@ public class MessageParser {
 
 	}
 
+	/**
+	 * This class simulates distance between the sender of a message and this server by waiting an amount
+	 * of time equal to the time it would take for a message to get from its sender's simulated location
+	 * to this server's simulated location.
+	 * 
+	 * This object is created each time a non-control message is received.
+	 * 
+	 * 
+	 * @author Christian
+	 *
+	 */
 	public static class ClientPingSimulator extends Thread {
 		public final long ping;
 		public final Message message;

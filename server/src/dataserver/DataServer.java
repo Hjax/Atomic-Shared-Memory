@@ -7,6 +7,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.concurrent.Semaphore;
@@ -29,10 +30,27 @@ public abstract class DataServer {
 
 	// The abstract methods of this object
 
+	/**
+	 * "writes" data to this server
+	 * @param key
+	 * @param value
+	 * @param timestamp 
+	 */
 	protected abstract void commitData(String key, String value, int timestamp);
-	protected abstract String getData(String key);
-	protected abstract int getTime(String key);
 
+	/**
+	 * "reads" data from this server
+	 * @param key
+	 * @return
+	 */
+	protected abstract String getData(String key);
+
+	/**
+	 * gets the most recent timestamp for a given key
+	 * @param key
+	 * @return
+	 */
+	protected abstract int getTime(String key);
 
 	public final static String 
 	WRITE_RECEIPT_FLAG = "write-return",
@@ -46,27 +64,114 @@ public abstract class DataServer {
 	OHSAM_READ_REQUEST_FLAG = "ohsam-read-request",
 	WAIT_COMMAND_FLAG = "wait", 
 	WAKE_COMMAND_FLAG = "wake",
-	SET_LOCATION_FLAG = "set-location";
+	SET_LOCATION_FLAG = "set-location",
+	ADD_SERVER_FLAG = "add-server",
+	REMOVE_SERVER_FLAG = "remove-server",
+	CLEAR_ALL_FLAG = "clear";
 
+	/* 
+	 * #####################################################################
+	 * ##### STANDARD SERVER VARIABLES #####################################
+	 * #####################################################################
+	 * 
+	 * These are variables you would see in a standard server
+	 */
 
-
+	/**
+	 * The local address of this machine
+	 * Has 2 member variables: ip and port
+	 * ip on this Address is alway localhost
+	 * port is whatever port this server is bound to on startup
+	 */
 	public final Address localAddress;
 
 
-	protected boolean awake = true;
+	/**
+	 * this machine's pcid. It is used when responding to a client as a signature of which server 
+	 * the message came from
+	 */
+	public final int id;
 
 	/**
-	 * This is the list of other data servers in the network
+	 * The list of addresses of servers this server communicates with in an oh-sam read
+	 * This is a mutable list as opposed to an array because it was easier to collect data if we didn't
+	 * have to create/kill servers on machines and instead could create many servers and just add/remove
+	 * them from each others' lists. 
+	 * 
+	 * This object is marked volatile because it is changed across threads
 	 */
-	public final int port, id;
-	public int droprate = 0;
+	protected volatile ArrayList<Address> addresses;
 
-	protected final Address[] addresses;
-	public int quorum() {
-		return (int) (this.addresses.length / 2) + 1;
+	/**
+	 * The semaphore that keeps threads from concurrently modifying the running list of addresses, 
+	 * or reading from the list while it is being modified.
+	 * 
+	 * The danger of concurrent modification comes from the fact that messages are handled as their own
+	 * threads, and some messages require reading from the address list (ohsamreads and add-server messages),
+	 * and some messages mutate the address list (remove-server messages)
+	 */
+	public final Semaphore addressSemaphore = new Semaphore(1);
+
+
+
+	/*
+	 * #####################################################################
+	 * #####################################################################
+	 * ##### CONTROL SERVER VARIABLES ######################################
+	 * #####################################################################
+	 * #####################################################################
+	 * 
+	 * These are variables used to affect the state of the server in simulations
+	 */
+
+
+	/**
+	 * Client can "kill" servers to simulate dead servers. This variable keeps track of state.
+	 * When asleep (awake = false), the server ignores all messages except Control messages and "wake" messages
+	 */
+	protected boolean awake = true;
+
+	public void sleep() {
+		this.awake = false;
+	}
+	public void wake() {
+		this.awake = true;
 	}
 
+	/**
+	 * Affects the percent chance of an incoming packet being dropped
+	 */
+	public int droprate = 0;
+
+	/**
+	 * The process of getting the number of relays required to constitute a majority is a method instead
+	 * of a set number because the address list can change if add-server and remove-server commands are issued
+	 * 
+	 * @return The number of server relays required to form a majority
+	 */
+	public int majority() {
+
+		try {
+			this.addressSemaphore.acquire();
+
+			int out = (int) ((this.addresses.size() + 1) / 2) + 1;
+
+
+			this.addressSemaphore.release();
+			return out;
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+			this.addressSemaphore.release();
+			return this.majority();
+		}
+
+	}
+
+	/**
+	 * This server's location. Used in ping simulation
+	 */
 	private Location location = new Location(0, 0);
+
 	public void setLocation(float x, float y) {
 		this.location = new Location(x, y);
 	}
@@ -74,6 +179,9 @@ public abstract class DataServer {
 		return this.location;
 	}
 
+	/**
+	 * The socket from which this server sends and receives packets
+	 */
 	public DatagramSocket soc;
 
 	private final static int REFRESH = 10000000;
@@ -89,9 +197,12 @@ public abstract class DataServer {
 
 
 		this.id = serverid;
-		this.port = port;
-		this.addresses = addresses;
 
+		this.addresses = new ArrayList<Address>();
+
+		if (addresses != null)
+			for (Address a : addresses)
+				this.addresses.add(a);
 
 		try {
 			this.soc = new DatagramSocket(port, InetAddress.getByName(address));
@@ -144,9 +255,28 @@ public abstract class DataServer {
 		// flags would be used and there is no reason to have multiple message types for the same algorithm. 
 		if (flag.equals(DataServer.OHSAM_READ_REQUEST_FLAG)) {
 
-			OhSamRelayMessage message = new OhSamRelayMessage(returnAddress, this.localAddress, reqid, clientid, clientxpos, clientypos, clientid, seqid, key, value, returnAddress, clientypos, clientypos);
 
+			// add ourselves to our majority
+			OhSamRelayMessage message = new OhSamRelayMessage(returnAddress, this.localAddress, reqid, clientid, clientxpos, clientypos, clientid, seqid, key, value, returnAddress, clientypos, clientypos);
 			this.addRelay(message);
+
+			// if this puts us at our required number of responses, return
+			// for receiving an ohsam request, we also check for numRelays > majority, in case
+			// the client is resending
+			if (this.getNumRelays(reqid, clientid) >= this.majority()) {
+				this.send(new ReadReturnMessage(
+						this.localAddress, 
+						message.getAddress(), 
+						reqid, 
+						this.id,
+						clientxpos,
+						clientypos,
+						this.getTime(key), 
+						this.getData(key)));
+			}
+
+
+			// We send out our relays to other servers when we receive an ohsam request
 			for (Address recipient : this.addresses)
 				this.send(new OhSamRelayMessage(this.localAddress, recipient, reqid, this.id, this.location.x, this.location.y, clientid, seqid, key, value, returnAddress, clientxpos, clientypos));
 
@@ -155,19 +285,23 @@ public abstract class DataServer {
 
 		else if (flag.equals(DataServer.READ_REQUEST_FLAG) || flag.equals(DataServer.RELIABLE_READ_FLAG)) {
 
+			// the normal conditions for when there have been no entries for a given key
 			if (value == null && seqid <= 0) {
 				this.send(new ReadReturnMessage(new Address(this.soc.getLocalAddress(), this.soc.getLocalPort()), returnAddress, 
 						reqid, this.id, clientxpos, clientypos, 0, 
 						"null"));
 			}
+			// we have a value, but for some reason the seqid is bad
 			else if (value != null && seqid <= 0)
 				this.send(new ReadReturnMessage(new Address(this.soc.getLocalAddress(), this.soc.getLocalPort()), returnAddress, 
 						reqid, this.id, clientxpos, clientypos, 0, 
 						"data-sync-error: value associated with '" + key + "' existed as data, but timestamp existed below 0"));
+			// there is no value, but for some reason there is a seqid, meaning it's been updated
 			else if (value == null && seqid > 0)
 				this.send(new ReadReturnMessage(new Address(this.soc.getLocalAddress(), this.soc.getLocalPort()), returnAddress, 
 						reqid, this.id, clientxpos, clientypos, 0, 
 						"data-sync-error: value associated with '" + key + "' did not exist as data, but timestamp existed above 0"));
+			// else, we're good
 			else
 				this.send(new ReadReturnMessage(new Address(this.soc.getLocalAddress(), this.soc.getLocalPort()), returnAddress, reqid, this.id, clientxpos, clientypos, seqid, value));
 		}
@@ -183,7 +317,9 @@ public abstract class DataServer {
 	 * @param reqid The request id of the message. Note that this is not necessary for the ABD read, but is necessary for placing the ohsam handler in its map
 	 */
 	protected void write(String key, String value, int timestamp, Address returnAddress, int reqid, float clientxpos, float clientypos) {
+
 		this.commitData(key, value, timestamp);// no matter what, send a receipt
+
 		WriteReturnMessage message = new WriteReturnMessage(
 				new Address(this.soc.getLocalAddress(), this.soc.getLocalPort()), 
 				returnAddress, 
@@ -198,17 +334,97 @@ public abstract class DataServer {
 
 	}
 
+	/**
+	 * Adds a server to this server's list of known servers.
+	 * USED FOR TESTING PURPOSES. SHOULD NOT BE IMPLEMENTED IN REAL WORLD SYSTEM.
+	 * @param address The address of the server to add. If the address is 
+	 * localAddress or already known, method returns without adding the address
+	 */
+	public void addServer(Address address) {
 
+		// if we're trying to add ourselves, no
+		if (address.toString().equals(this.localAddress.toString()))
+			return;
+
+		try {
+
+			addressSemaphore.acquire();
+
+			for (Address a : this.addresses)
+				if (a.toString().equals(address.toString())) {
+
+					addressSemaphore.release();
+
+					return; // it's already added; don't add it twice
+				}
+
+			this.addresses.add(address); // it's not added yet; add it
+
+			addressSemaphore.release();
+
+			return;
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+			// release semaphore if we have it
+			this.addressSemaphore.release();
+			// try again
+			this.addServer(address);
+		}
+	}
+
+	/**
+	 * 
+	 * USED FOR TESTING PURPOSES. SHOULD NOT BE IMPLEMENTED IN REAL WORLD SYSTEM.
+	 * @param address The address of the server to remove
+	 */
+	public void removeServer(Address address) {
+
+		try {
+
+			addressSemaphore.acquire();
+
+			Address del = null;
+
+			for (Address a : this.addresses)
+				if (a.toString().equals(address.toString())) {
+					del = a; //it's here; remove it
+					break;
+				}
+
+			if (del != null)
+				this.addresses.remove(del);
+
+			addressSemaphore.release();
+
+			return;
+
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+			// release semaphore if we have it
+			this.addressSemaphore.release();
+			// try again
+			this.addServer(address);
+		}
+
+	}
+
+	/**
+	 * Removes all mappings in this DataServer, including:
+	 * 	A. Currently handled oh-sam requests
+	 *  B. Known Servers
+	 *  C. Timestamps
+	 *  D. Data
+	 * USED FOR TESTING PURPOSES. SHOULD NOT BE IMPLEMENTED IN REAL WORLD SYSTEM.
+	 */
+	public abstract void clear();
+
+
+	/**
+	 * Closes this DataServer's bound socket
+	 */
 	public void close() {
 		this.soc.close();
 	}
-	public void sleep() {
-		this.awake = false;
-	}
-	public void wake() {
-		this.awake = true;
-	}
-
 
 	/**
 	 * This object keeps track of all important information for an OhSamRequest.
@@ -246,13 +462,14 @@ public abstract class DataServer {
 		void addRelay(Address address) {
 
 			try {
-				
+
 				addressSemaphore.acquire(); // this is the line that throws the interrupted exception
 
 				for (Address addr : this.addresses)
-					if (addr.toString().equals(address.toString()))
+					if (addr.toString().equals(address.toString())) {
+						addressSemaphore.release();
 						return; // We already have the address, so return
-
+					}
 				// else, we get here and add the address
 				this.addresses.add(address);
 
@@ -276,9 +493,11 @@ public abstract class DataServer {
 		}
 	}
 
-
-
-	private LinkedHashMap<Integer, OhSamRequest> requests = new LinkedHashMap<Integer, OhSamRequest>();
+	/**
+	 * The map of currently handled oh-sam requests
+	 * The key is the id of the client
+	 */
+	protected LinkedHashMap<Integer, OhSamRequest> requests = new LinkedHashMap<Integer, OhSamRequest>();
 	public final int getNumRelays(int reqid, int pcid) {
 		OhSamRequest request = this.requests.get(pcid);
 		if (request == null) {
@@ -292,6 +511,8 @@ public abstract class DataServer {
 		else
 			return request.count;
 	}
+
+
 	public final void addRelay(OhSamRelayMessage message) {
 
 
@@ -321,13 +542,12 @@ public abstract class DataServer {
 			request.addRelay(returnAddress);
 
 
-
 		}
 
 		// if the client reqid is NEWER (of higher value) than the reqid of the request we're currently handling,
 		// then we know the client already got all the responses it needs from other servers and has moved on to
 		// another request
-		else if (reqid > request.reqid) {
+		else if (clientid == request.clientid && reqid > request.reqid) {
 
 			// clear out the old request
 			this.requests.remove(clientid);
@@ -350,7 +570,16 @@ public abstract class DataServer {
 
 		int oldSeqid = this.getTime(key);
 
-		if (this.getNumRelays(reqid, clientid) == this.quorum()) {
+
+
+
+		// seqids with higher value are considered "newer"
+		if (newSeqid > oldSeqid)
+			this.commitData(key, value, newSeqid);
+
+
+		// if we've reached our majority, reply to client
+		if (this.getNumRelays(reqid, clientid) == this.majority()) {
 			this.send(new ReadReturnMessage(
 					this.localAddress, 
 					message.getAddress(), 
@@ -362,14 +591,9 @@ public abstract class DataServer {
 					this.getData(key)));
 		}
 
-
-		// seqids with higher value are considered "newer"
-		if (newSeqid > oldSeqid)
-			this.commitData(key, value, newSeqid);
-
-
 	}
 
+	
 	public final double DISTANCE_PING_RATIO = 1.0; // 1ms ping / unit distance
 	/**
 	 * 
@@ -405,6 +629,22 @@ public abstract class DataServer {
 		System.out.println("Sending to\t" + message.recipient().addr() + ":" + message.recipient().port() + "\t:\t" + message.toString());
 		new SocketMessageSender(this.soc, message, this).start();
 	}	
+	
+	/**
+	 * The object that handles sending messages back to the client.
+	 * 
+	 * This thread abstraction was necessary because the client is single threaded and cannot simulate
+	 * its own ping in a controlled environment. The server simulates its ping for it by adding a delay
+	 * whenever the server sends a message to the client (which is equivalent to the client simulating a 
+	 * delay before it reads a message)
+	 * 
+	 * Note that sending a message to another server does not use a MessageSender, but rather sends the
+	 * message directly. This is because servers already calculate their own ping when receiving any type
+	 * of message, so using a message sender is not necessary
+	 * 
+	 * @author Christian
+	 *
+	 */
 	private abstract class MessageSender extends Thread {
 
 		protected final Address recipient;
@@ -431,6 +671,9 @@ public abstract class DataServer {
 			this.send();
 		}
 
+		/**
+		 * This method is kept abstract so as to allow multiple different types of message passing
+		 */
 		abstract void send();
 
 		@Override
@@ -439,6 +682,12 @@ public abstract class DataServer {
 		}
 
 	}
+	
+	/**
+	 * The MessageSender object that sends messages through packets on a socket
+	 * @author Christian
+	 *
+	 */
 	private class SocketMessageSender extends MessageSender {
 
 		SocketMessageSender(DatagramSocket soc, Message m, DataServer server) {

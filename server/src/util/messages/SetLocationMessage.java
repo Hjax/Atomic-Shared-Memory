@@ -11,8 +11,6 @@ import util.Address;
  *
  */
 public class SetLocationMessage extends Message {
-
-	
 	
 	public SetLocationMessage(Address sender, Address recipient, String messageParts) {
 		super(sender, recipient, messageParts);

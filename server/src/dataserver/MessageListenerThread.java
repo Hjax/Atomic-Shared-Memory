@@ -30,6 +30,7 @@ public abstract class MessageListenerThread extends Thread {
 
 		Message message;
 
+		// TODO make this not busy wait
 		while(this.cont) {
 			if ( (message = this.listen()) != null)
 				this.parser.parse(message);

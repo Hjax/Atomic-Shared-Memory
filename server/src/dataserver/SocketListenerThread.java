@@ -28,8 +28,8 @@ public class SocketListenerThread extends MessageListenerThread {
 	protected DatagramSocket soc;
 	private int timeout = -1;
 
-	/** controls how much information is displayed from this object
-	 * 
+	/** 
+	 * controls how much information is displayed from this object
 	 */
 	private boolean verbose = false;
 
@@ -47,12 +47,16 @@ public class SocketListenerThread extends MessageListenerThread {
 		}
 	}
 
+	/**
+	 * listens to the port for a packet
+	 */
 	protected Message listen() {
 		try {
 
 			DatagramPacket packet = new DatagramPacket(new byte[1028], 1028);
 			Address localAddress = new Address(this.soc.getLocalAddress(), this.soc.getLocalPort());
 
+			
 			this.soc.receive(packet);
 
 			if (packet != null) {
@@ -60,7 +64,11 @@ public class SocketListenerThread extends MessageListenerThread {
 				for (byte b : packet.getData())
 					if (b != 0)
 						s = s + (char) b;
-				return Message.construct(new Address(packet.getAddress(), packet.getPort()), localAddress, s.trim());
+				// message.construct() makes a message of the appropriate class
+				return Message.construct(
+						new Address(packet.getAddress(), packet.getPort()), // sender
+						localAddress, 										// recipient
+						s.trim());											// message
 			}
 
 		} catch (SocketTimeoutException toe) {
