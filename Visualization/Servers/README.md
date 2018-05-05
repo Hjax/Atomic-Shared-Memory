@@ -1,0 +1,1 @@
+startservers.py will automatically spin up a number of local servers given access to an Atomic-Shared-Memory.jar file. You can configure the number of servers it will start using the constant at the top of the file, its only requirement is python 2.7.x
